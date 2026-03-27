@@ -77,10 +77,13 @@ input[type=text]:focus { border-color: var(--gold); }
 .user-card.rank-1 { border-color: var(--gold); border-width: 1px; }
 .user-card.rank-2 { border-color: var(--silver); }
 .user-card.rank-3 { border-color: var(--bronze); }
-.avatar { width: 46px; height: 46px; border-radius: 50%; margin: 0 auto 0.55rem; display: flex; align-items: center; justify-content: center; font-family: 'Playfair Display', serif; font-size: 1.05rem; font-weight: 700; border: 1.5px solid; background: var(--surface2); }
+.avatar { width: 52px; height: 52px; border-radius: 50%; margin: 0 auto 0.55rem; display: flex; align-items: center; justify-content: center; font-family: 'Playfair Display', serif; font-size: 1.05rem; font-weight: 700; border: 2px solid; background: var(--surface2); overflow: hidden; flex-shrink: 0; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 .rank-1 .avatar { border-color: var(--gold); color: var(--gold); }
 .rank-2 .avatar { border-color: var(--silver); color: var(--silver); }
 .rank-3 .avatar { border-color: var(--bronze); color: var(--bronze); }
+.row-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--surface2); border: 0.5px solid var(--border2); overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: 0.6rem; color: var(--dim); }
+.row-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 .uname { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .film-count { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 700; line-height: 1.1; margin-top: 0.28rem; }
 .rank-1 .film-count { color: var(--gold); }
@@ -208,12 +211,13 @@ function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(users)); } catch(e){}
 }
 
+
 // --- API ---
-async function fetchCount(username) {
+async function fetchUserData(username) {
   const res = await fetch(`/api/letterboxd?username=${encodeURIComponent(username)}&year=${YEAR}`);
   const data = await res.json();
   if (!data.ok) throw new Error(data.error || 'Error desconocido');
-  return data.count;
+  return { count: data.count, avatar: data.avatar || null };
 }
 
 // --- Actions ---
@@ -237,8 +241,8 @@ async function addUser() {
   setMsg(`Buscando películas de @${raw}...`, '');
 
   try {
-    const count = await fetchCount(raw);
-    users[raw] = { username: raw, count, lastUpdated: Date.now(), error: null };
+    const { count, avatar } = await fetchUserData(raw);
+    users[raw] = { username: raw, count, avatar, lastUpdated: Date.now(), error: null };
     save();
     input.value = '';
     fetching.delete(raw);
@@ -258,8 +262,9 @@ async function refreshUser(username) {
   render();
 
   try {
-    const count = await fetchCount(username);
+    const { count, avatar } = await fetchUserData(username);
     users[username].count = count;
+    users[username].avatar = avatar;
     users[username].lastUpdated = Date.now();
     users[username].error = null;
     save();
@@ -289,6 +294,13 @@ function timeAgo(ts) {
   const h = Math.floor(m/60);
   if (h < 24) return `${h}h`;
   return `${Math.floor(h/24)}d`;
+}
+
+function avatarHtml(user, size='podium') {
+  if (user.avatar) {
+    return `<img src="${user.avatar}" alt="@${user.username}" onerror="this.parentElement.innerHTML='${initials(user.username)}'">`;
+  }
+  return initials(user.username);
 }
 
 // --- Render ---
@@ -337,7 +349,7 @@ function renderPodium(sorted) {
       <div class="podium-slot ${slotClasses[i]}">
         <div class="user-card ${cardRank[rank]}">
           <div class="medal">${rankLabel[rank-1]}</div>
-          <div class="avatar">${initials(user.username)}</div>
+          <div class="avatar">${avatarHtml(user)}</div>
           <div class="uname">@${user.username}</div>
           ${countHtml}
         </div>
@@ -360,9 +372,14 @@ function renderList(sorted) {
       ? `<span class="inline-spinner"></span>`
       : user.count;
 
+    const rowAvatar = user.avatar
+      ? `<div class="row-avatar"><img src="${user.avatar}" alt="@${user.username}" onerror="this.parentElement.innerHTML='${initials(user.username)}'"></div>`
+      : `<div class="row-avatar">${initials(user.username)}</div>`;
+
     return `
       <div class="user-row ${user.error ? 'error-row' : ''}" style="animation-delay:${i*0.04}s">
         <div class="row-rank">${i+1}</div>
+        ${rowAvatar}
         <div class="row-name"><a href="https://letterboxd.com/${user.username}" target="_blank">@${user.username}</a></div>
         <div class="row-count">${countDisplay}</div>
         <div class="row-updated">${timeAgo(user.lastUpdated)}</div>
