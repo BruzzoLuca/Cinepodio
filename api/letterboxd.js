@@ -1,120 +1,92 @@
-import { parse } from "node-html-parser";
+import { createClerkClient } from "@clerk/backend";
 
 export const config = { runtime: "edge" };
 
-const HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-  "Accept-Language": "en-US,en;q=0.5",
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
+const CLERK_SECRET = process.env.CLERK_SECRET_KEY;
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Content-Type": "application/json",
 };
 
-async function fetchPage(username, year, page = 1) {
-  const url = `https://letterboxd.com/${username}/films/diary/for/${year}/page/${page}/`;
-  const res = await fetch(url, { headers: HEADERS });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return await res.text();
-}
-
-async function getProfileAvatar(username) {
+async function getUserId(req) {
+  const auth = req.headers.get("Authorization") || "";
+  const token = auth.replace("Bearer ", "").trim();
+  if (!token) return null;
   try {
-    const res = await fetch(`https://letterboxd.com/${username}/`, { headers: HEADERS });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const root = parse(html);
-
-    const selectors = [
-      ".profile-avatar img",
-      "img.avatar",
-      ".avatar-container img",
-      "section.profile-header img",
-      ".profile-header img",
-    ];
-
-    for (const sel of selectors) {
-      const img = root.querySelector(sel);
-      const src = img?.getAttribute("src") || img?.getAttribute("data-src");
-      if (src && src.startsWith("http") && !src.includes("avatar0")) return src;
-    }
-
-    const ogImg = root.querySelector('meta[property="og:image"]');
-    const ogSrc = ogImg?.getAttribute("content");
-    if (ogSrc && ogSrc.includes("http") && !ogSrc.includes("default-avatar")) return ogSrc;
-
-    return null;
+    const clerk = createClerkClient({ secretKey: CLERK_SECRET });
+    const payload = await clerk.verifyToken(token);
+    return payload.sub;
   } catch (e) {
     return null;
   }
 }
 
-async function getFilmCount(username, year) {
-  const html = await fetchPage(username, year, 1);
-  const root = parse(html);
-
-  if (root.querySelector(".error-404")) throw new Error("USER_NOT_FOUND");
-  if (root.querySelector(".profile-locked")) throw new Error("PRIVATE_PROFILE");
-
-  const paginationText =
-    root.querySelector(".paginate-pages")?.text ||
-    root.querySelector("[data-total]")?.getAttribute("data-total") ||
-    "";
-
-  const ofMatch = paginationText.match(/of\s+([\d,]+)/i);
-  if (ofMatch) return parseInt(ofMatch[1].replace(/,/g, ""));
-
-  const entries = root.querySelectorAll("tr.diary-entry-row");
-  const entriesPage1 = entries.length;
-  if (entriesPage1 === 0) return 0;
-
-  const lastPageHref = root.querySelector(".paginate-pages a:last-child")?.getAttribute("href") || "";
-  const lastPageMatch = lastPageHref.match(/page\/(\d+)/);
-  if (!lastPageMatch) return entriesPage1;
-
-  const lastPage = parseInt(lastPageMatch[1]);
-  const lastHtml = await fetchPage(username, year, lastPage);
-  const lastRoot = parse(lastHtml);
-  const lastEntries = lastRoot.querySelectorAll("tr.diary-entry-row").length;
-
-  return (lastPage - 1) * entriesPage1 + lastEntries;
+async function supabase(method, path, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    method,
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": method === "POST" ? "resolution=merge-duplicates,return=representation" : "return=representation",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Supabase error: ${err}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
 }
 
 export default async function handler(req) {
-  const { searchParams } = new URL(req.url);
-  const username = searchParams.get("username")?.toLowerCase().trim();
-  const year = parseInt(searchParams.get("year")) || new Date().getFullYear();
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
-  const cors = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Content-Type": "application/json",
-  };
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: cors });
+  const userId = await getUserId(req);
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "No autorizado" }), { status: 401, headers: cors });
   }
 
-  if (!username || !/^[a-z0-9_-]+$/.test(username)) {
-    return new Response(JSON.stringify({ error: "Nombre de usuario inválido" }), { status: 400, headers: cors });
+  const { pathname, searchParams } = new URL(req.url);
+
+  // GET /api/podio — get all entries for this user
+  if (req.method === "GET") {
+    const data = await supabase("GET", `/podio_entries?owner_id=eq.${userId}&order=film_count.desc`);
+    return new Response(JSON.stringify(data), { status: 200, headers: cors });
   }
 
-  try {
-    const [count, avatar] = await Promise.all([
-      getFilmCount(username, year),
-      getProfileAvatar(username),
-    ]);
-
-    return new Response(JSON.stringify({ username, year, count, avatar, ok: true }), {
-      status: 200,
-      headers: cors,
+  // POST /api/podio — upsert an entry
+  if (req.method === "POST") {
+    const body = await req.json();
+    const { letterboxd_username, film_count, avatar_url } = body;
+    if (!letterboxd_username || film_count === undefined) {
+      return new Response(JSON.stringify({ error: "Faltan datos" }), { status: 400, headers: cors });
+    }
+    const data = await supabase("POST", "/podio_entries", {
+      owner_id: userId,
+      letterboxd_username: letterboxd_username.toLowerCase(),
+      film_count,
+      avatar_url: avatar_url || null,
+      last_updated: new Date().toISOString(),
     });
-  } catch (e) {
-    const msg =
-      e.message === "USER_NOT_FOUND" ? "Usuario no encontrado en Letterboxd"
-      : e.message === "PRIVATE_PROFILE" ? "El perfil de este usuario es privado"
-      : "No se pudo obtener los datos. Intentá de nuevo.";
-
-    return new Response(JSON.stringify({ error: msg, ok: false }), {
-      status: e.message === "USER_NOT_FOUND" ? 404 : 500,
-      headers: cors,
-    });
+    return new Response(JSON.stringify(data[0] || {}), { status: 200, headers: cors });
   }
+
+  // DELETE /api/podio?username=xxx — delete an entry
+  if (req.method === "DELETE") {
+    const username = searchParams.get("username");
+    if (!username) {
+      return new Response(JSON.stringify({ error: "Falta username" }), { status: 400, headers: cors });
+    }
+    await supabase("DELETE", `/podio_entries?owner_id=eq.${userId}&letterboxd_username=eq.${username}`);
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: cors });
+  }
+
+  return new Response(JSON.stringify({ error: "Método no soportado" }), { status: 405, headers: cors });
 }
