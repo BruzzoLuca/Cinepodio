@@ -1,0 +1,8 @@
+{
+  "name": "cinepodio",
+  "version": "1.0.0",
+  "description": "Podio de películas vistas en Letterboxd",
+  "dependencies": {
+    "node-html-parser": "^6.1.13"
+  }
+}
