@@ -6,7 +6,8 @@
 <title>Cinepodio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"></script>
+<script>window.__clerk_publishable_key = "pk_test_bmV3LWdudS0xNC5jbGVyay5hY2NvdW50cy5kZXYk";</script>
+<script async crossorigin="anonymous" data-clerk-publishable-key="pk_test_bmV3LWdudS0xNC5jbGVyay5hY2NvdW50cy5kZXYk" src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js" onload="initClerk()"></script>
 <style>
 :root {
   --bg:#0d0d0f; --surface:#141416; --surface2:#1c1c20;
@@ -446,7 +447,7 @@ function renderList(sorted) {
 document.getElementById('add-btn').addEventListener('click', addUser);
 document.getElementById('username-input').addEventListener('keydown', e => { if(e.key==='Enter') addUser(); });
 
-window.addEventListener('load', initClerk);
+
 </script>
 </body>
 </html>
