@@ -241,13 +241,15 @@ async function addUser() {
     users[raw] = { username: raw, count, lastUpdated: Date.now(), error: null };
     save();
     input.value = '';
+    fetching.delete(raw);
+    btn.disabled = false;
     setMsg(`@${raw} agregado — ${count} película${count !== 1 ? 's' : ''} en ${YEAR} ✓`, 'ok');
     render();
   } catch(e) {
+    fetching.delete(raw);
+    btn.disabled = false;
     setMsg(e.message, 'err');
   }
-  fetching.delete(raw);
-  btn.disabled = false;
 }
 
 async function refreshUser(username) {
