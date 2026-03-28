@@ -202,9 +202,67 @@ const YEAR = new Date().getFullYear();
 const endOfYear = new Date(YEAR, 11, 31);
 const today = new Date();
 const daysLeft = Math.ceil((endOfYear - today) / (1000 * 60 * 60 * 24));
-document.getElementById('days-label').textContent = daysLeft === 1 ? '1 día restante' : daysLeft + ' días restantes';
+document.getElementById('days-label').textContent = daysLeft + 'd para el cierre';
 const CLERK_KEY = 'pk_test_bmV3LWdudS0xNC5jbGVyay5hY2NvdW50cy5kZXYk';
 document.getElementById('year-label').textContent = YEAR;
+
+// ---- SHARE MODE ----
+const SHARE_UID = new URLSearchParams(window.location.search).get('uid');
+if (SHARE_UID) {
+  document.getElementById('auth-bar').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('share-bar').style.display = 'none';
+  document.getElementById('main-content').innerHTML = '<div id="podium-container"></div><div class="divider"></div><div id="list-section" style="display:none;"><div class="section-label">Ranking completo</div><div class="user-list" id="user-list"></div></div>';
+  document.getElementById('main-content').style.display = 'block';
+  loadSharedPodio(SHARE_UID);
+}
+
+async function loadSharedPodio(uid) {
+  document.getElementById('podium-container').innerHTML =
+    '<div class="loading-full"><div class="spinner"></div> cargando podio...</div>';
+  try {
+    const res = await fetch('/api/share?uid=' + encodeURIComponent(uid));
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const name = data.profile ? data.profile.display_name : 'este usuario';
+    document.title = 'Cinepodio de ' + name;
+    const entries = data.entries.map(e => ({ username: e.letterboxd_username, count: e.film_count, avatar: e.avatar_url }));
+    renderSharedPodium(entries);
+    renderSharedList(entries, name);
+  } catch(e) {
+    document.getElementById('podium-container').innerHTML =
+      '<div class="empty-state"><p style="color:var(--red)">No se pudo cargar el podio.</p></div>';
+  }
+}
+
+function ini(name) { return name.substring(0,2).toUpperCase(); }
+
+function renderSharedPodium(entries) {
+  const sorted = [...entries].sort((a,b) => b.count - a.count);
+  const el = document.getElementById('podium-container');
+  if (!sorted.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🎞</div><p>Este podio todavía no tiene usuarios.</p></div>'; return; }
+  let order, ranks, slotClasses;
+  if (sorted.length >= 3) { order=[sorted[1],sorted[0],sorted[2]]; ranks=[2,1,3]; slotClasses=['ps-left','ps-center','ps-right']; }
+  else if (sorted.length === 2) { order=[sorted[1],sorted[0]]; ranks=[2,1]; slotClasses=['ps-left','ps-center']; }
+  else { order=[sorted[0]]; ranks=[1]; slotClasses=['ps-center']; }
+  const rl=['I','II','III'], cr={1:'rank-1',2:'rank-2',3:'rank-3'}, pb={1:'pb-1',2:'pb-2',3:'pb-3'};
+  el.innerHTML = '<div class="podium-wrap">' + order.map((u,i) => {
+    const rank=ranks[i];
+    const av = u.avatar ? '<img src="'+u.avatar+'" alt="@'+u.username+'" onerror="this.parentElement.innerHTML=''+ini(u.username)+''">' : ini(u.username);
+    return '<div class="podium-slot '+slotClasses[i]+'"><div class="user-card '+cr[rank]+'"><div class="medal">'+rl[rank-1]+'</div><div class="avatar">'+av+'</div><div class="uname">@'+u.username+'</div><div class="film-count">'+u.count+'</div><div class="films-label">películas</div></div><div class="podium-block '+pb[rank]+'">'+rl[rank-1]+'</div></div>';
+  }).join('') + '</div>';
+}
+
+function renderSharedList(entries, ownerName) {
+  const sorted = [...entries].sort((a,b) => b.count - a.count);
+  const sec = document.getElementById('list-section');
+  if (!sorted.length) { sec.style.display='none'; return; }
+  sec.style.display='block';
+  document.getElementById('user-list').innerHTML = sorted.map((u,i) => {
+    const av = u.avatar ? '<div class="row-avatar"><img src="'+u.avatar+'" alt="@'+u.username+'" onerror="this.parentElement.innerHTML=''+ini(u.username)+''"></div>' : '<div class="row-avatar">'+ini(u.username)+'</div>';
+    return '<div class="user-row" style="animation-delay:'+i*0.04+'s"><div class="row-rank">'+(i+1)+'</div>'+av+'<div class="row-name"><a href="https://letterboxd.com/'+u.username+'" target="_blank">@'+u.username+'</a></div><div class="row-count">'+u.count+'</div></div>';
+  }).join('') + '<div style="text-align:center;margin-top:2.5rem;padding-top:1.5rem;border-top:0.5px solid var(--border);"><p style="font-family:DM Mono,monospace;font-size:0.78rem;color:var(--muted);margin-bottom:1rem;">¿Querés armar tu propio podio?</p><a href="/" style="display:inline-flex;align-items:center;gap:0.5rem;background:var(--surface2);border:0.5px solid var(--gold);color:var(--gold);font-family:DM Mono,monospace;font-size:0.8rem;padding:0.6rem 1.2rem;border-radius:6px;text-decoration:none;">→ Crear el mío</a></div>';
+}
 
 let clerk = null;
 let users = {};
