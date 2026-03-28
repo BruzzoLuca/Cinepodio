@@ -129,6 +129,9 @@ input[type=text]:focus{border-color:var(--gold);}
 .btn-icon.spinning{animation:spin 0.75s linear infinite;}
 .error-row{border-color:rgba(232,71,74,0.2)!important;}
 
+.btn-share{display:inline-flex;align-items:center;gap:0.5rem;background:none;border:0.5px solid var(--gold);color:var(--gold);font-family:'DM Mono',monospace;font-size:0.78rem;letter-spacing:0.05em;padding:0.45rem 1rem;border-radius:6px;cursor:pointer;transition:all 0.15s;}
+.btn-share:hover{background:var(--gold);color:var(--bg);}
+.share-bar{display:flex;justify-content:flex-end;margin-top:1.5rem;}
 footer{text-align:center;font-family:'DM Mono',monospace;font-size:0.75rem;color:var(--dim);letter-spacing:0.08em;margin-top:2.5rem;}
 </style>
 </head>
@@ -187,6 +190,10 @@ footer{text-align:center;font-family:'DM Mono',monospace;font-size:0.75rem;color
     </div>
   </div>
 
+  <div class="share-bar" id="share-bar" style="display:none;">
+    <button class="btn-share" onclick="copyShareLink()">⬡ copiar link del podio</button>
+  </div>
+
   <footer>cinepodio · datos de letterboxd.com</footer>
 </div>
 
@@ -195,7 +202,7 @@ const YEAR = new Date().getFullYear();
 const endOfYear = new Date(YEAR, 11, 31);
 const today = new Date();
 const daysLeft = Math.ceil((endOfYear - today) / (1000 * 60 * 60 * 24));
-document.getElementById('days-label').textContent = daysLeft + 'd para el cierre';
+document.getElementById('days-label').textContent = daysLeft === 1 ? '1 día restante' : daysLeft + ' días restantes';
 const CLERK_KEY = 'pk_test_bmV3LWdudS0xNC5jbGVyay5hY2NvdW50cy5kZXYk';
 document.getElementById('year-label').textContent = YEAR;
 
@@ -233,7 +240,32 @@ function showApp(user) {
   document.getElementById('btn-logout').onclick = () => clerk.signOut();
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('main-content').style.display = 'block';
+  saveProfile(user);
   loadPodio();
+}
+
+async function saveProfile(user) {
+  try {
+    const name = user.firstName || user.emailAddresses[0]?.emailAddress?.split("@")[0] || "usuario";
+    await apiFetch("POST", "/api/podio", { profile: { display_name: name, avatar_url: user.imageUrl || null } });
+  } catch(e) { console.warn("Could not save profile", e); }
+}
+
+function getShareLink() {
+  const uid = clerk.user?.id;
+  if (!uid) return null;
+  return `${window.location.origin}/share?uid=${encodeURIComponent(uid)}`;
+}
+
+async function copyShareLink() {
+  const link = getShareLink();
+  if (!link) return;
+  try {
+    await navigator.clipboard.writeText(link);
+    setMsg("Link copiado al portapapeles ✓", "ok");
+  } catch(e) {
+    setMsg(link, "ok");
+  }
 }
 
 async function getToken() {
@@ -367,6 +399,8 @@ function avatarHtml(user) {
 }
 
 function render() {
+  const shareBar = document.getElementById("share-bar");
+  if (shareBar) shareBar.style.display = Object.keys(users).length > 0 ? "flex" : "none";
   const sorted = Object.values(users).sort((a,b) => b.count - a.count);
   renderPodium(sorted);
   renderList(sorted);
