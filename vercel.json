@@ -2,6 +2,7 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/share", "destination": "/public/share.html" },
+    { "source": "/share/(.*)", "destination": "/public/share.html" },
     { "source": "/(.*)", "destination": "/public/index.html" }
   ]
 }
