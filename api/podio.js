@@ -11,7 +11,6 @@ const cors = {
   "Content-Type": "application/json",
 };
 
-// --- JWT verification using Web Crypto (Edge-compatible) ---
 function base64urlToBuffer(str) {
   const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
   const padded = b64.padEnd(b64.length + (4 - b64.length % 4) % 4, '=');
@@ -27,19 +26,16 @@ function pemToBuffer(pem) {
 async function verifyJWT(token) {
   const [headerB64, payloadB64, sigB64] = token.split('.');
   if (!headerB64 || !payloadB64 || !sigB64) throw new Error('Invalid token');
-
   const keyBuffer = pemToBuffer(CLERK_PEM);
   const cryptoKey = await crypto.subtle.importKey(
     'spki', keyBuffer,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false, ['verify']
   );
-
   const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
   const sig  = base64urlToBuffer(sigB64);
   const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sig, data);
   if (!valid) throw new Error('Invalid signature');
-
   const payload = JSON.parse(atob(payloadB64.replace(/-/g,'+').replace(/_/g,'/')));
   if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) throw new Error('Token expired');
   return payload;
@@ -52,22 +48,17 @@ async function getUserId(req) {
   try {
     const payload = await verifyJWT(token);
     return payload.sub;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
-// --- Supabase REST helper ---
-async function supabase(method, path, body) {
+async function supabaseReq(method, path, body) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
     method,
     headers: {
       apikey: SUPABASE_KEY,
       Authorization: `Bearer ${SUPABASE_KEY}`,
       'Content-Type': 'application/json',
-      Prefer: method === 'POST'
-        ? 'resolution=merge-duplicates,return=representation'
-        : 'return=representation',
+      Prefer: method === 'POST' ? 'resolution=merge-duplicates,return=representation' : 'return=representation',
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -76,7 +67,6 @@ async function supabase(method, path, body) {
   return text ? JSON.parse(text) : [];
 }
 
-// --- Handler ---
 export default async function handler(req) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
@@ -86,15 +76,28 @@ export default async function handler(req) {
   const { searchParams } = new URL(req.url);
 
   if (req.method === 'GET') {
-    const data = await supabase('GET', `/podio_entries?owner_id=eq.${userId}&order=film_count.desc`);
+    const data = await supabaseReq('GET', `/podio_entries?owner_id=eq.${userId}&order=film_count.desc`);
     return new Response(JSON.stringify(data), { status: 200, headers: cors });
   }
 
   if (req.method === 'POST') {
-    const { letterboxd_username, film_count, avatar_url } = await req.json();
+    const body = await req.json();
+
+    // Save user profile if provided
+    if (body.profile) {
+      await supabaseReq('POST', '/user_profiles', {
+        id: userId,
+        display_name: body.profile.display_name,
+        avatar_url: body.profile.avatar_url || null,
+      });
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: cors });
+    }
+
+    // Save podio entry
+    const { letterboxd_username, film_count, avatar_url } = body;
     if (!letterboxd_username || film_count === undefined)
       return new Response(JSON.stringify({ error: 'Faltan datos' }), { status: 400, headers: cors });
-    const data = await supabase('POST', '/podio_entries', {
+    const data = await supabaseReq('POST', '/podio_entries', {
       owner_id: userId,
       letterboxd_username: letterboxd_username.toLowerCase(),
       film_count,
@@ -107,7 +110,7 @@ export default async function handler(req) {
   if (req.method === 'DELETE') {
     const username = searchParams.get('username');
     if (!username) return new Response(JSON.stringify({ error: 'Falta username' }), { status: 400, headers: cors });
-    await supabase('DELETE', `/podio_entries?owner_id=eq.${userId}&letterboxd_username=eq.${username}`);
+    await supabaseReq('DELETE', `/podio_entries?owner_id=eq.${userId}&letterboxd_username=eq.${username}`);
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers: cors });
   }
 
