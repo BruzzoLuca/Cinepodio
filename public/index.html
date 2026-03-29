@@ -187,7 +187,9 @@ footer{text-align:center;font-family:'DM Mono',monospace;font-size:0.75rem;color
 <script>
 const YEAR = new Date().getFullYear();
 const endOfYear = new Date(YEAR, 11, 31);
-const daysLeft = Math.ceil((endOfYear - new Date()) / (1000 * 60 * 60 * 24));
+const today = new Date();
+today.setHours(0,0,0,0);
+const daysLeft = Math.round((endOfYear - today) / (1000 * 60 * 60 * 24));
 document.getElementById('year-label').textContent = YEAR;
 document.getElementById('days-label').textContent = daysLeft + 'd para el cierre';
 
