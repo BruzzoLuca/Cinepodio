@@ -22,4 +22,3 @@ public/index.html   → La app web completa
 package.json        → Dependencias (node-html-parser)
 vercel.json         → Configuración de rutas de Vercel
 ```
-# Cinepodio
