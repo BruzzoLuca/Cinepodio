@@ -400,7 +400,7 @@ async function refreshUser(username) {
     var data = await fetchUserData(username);
     await saveToDB(username, data.count, data.avatar);
     users[username] = Object.assign({}, users[username], { count: data.count, avatar: data.avatar, lastUpdated: Date.now() });
-    setMsg('@' + username + ' actualizado — ' + data.count + ' películas', 'ok');
+    setMsg('@' + username + ' actualizado — ' + data.count + ' película' + (data.count !== 1 ? 's' : ''), 'ok');
   } catch(e) {
     setMsg('Error al actualizar @' + username + ': ' + e.message, 'err');
   }
