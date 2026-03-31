@@ -93,17 +93,25 @@ export default async function handler(req) {
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers: cors });
     }
 
-    // Save podio entry
+    // Save podio entry — update if exists, insert if not
     const { letterboxd_username, film_count, avatar_url } = body;
     if (!letterboxd_username || film_count === undefined)
       return new Response(JSON.stringify({ error: 'Faltan datos' }), { status: 400, headers: cors });
-    const data = await supabaseReq('POST', '/podio_entries', {
-      owner_id: userId,
-      letterboxd_username: letterboxd_username.toLowerCase(),
+
+    const uname = letterboxd_username.toLowerCase();
+    const entryFields = {
       film_count,
       avatar_url: avatar_url || null,
       last_updated: new Date().toISOString(),
-    });
+    };
+
+    const existing = await supabaseReq('GET', `/podio_entries?owner_id=eq.${userId}&letterboxd_username=eq.${uname}`);
+    let data;
+    if (existing.length > 0) {
+      data = await supabaseReq('PATCH', `/podio_entries?owner_id=eq.${userId}&letterboxd_username=eq.${uname}`, entryFields);
+    } else {
+      data = await supabaseReq('POST', '/podio_entries', { owner_id: userId, letterboxd_username: uname, ...entryFields });
+    }
     return new Response(JSON.stringify(data[0] || {}), { status: 200, headers: cors });
   }
 
